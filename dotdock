@@ -1,0 +1,595 @@
+#!/bin/bash
+
+################################################################################
+#
+# Copyright (c) 2017 Stephen Parker (http://withaspark.com)
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+################################################################################
+
+#
+# Settings
+#
+APP_DIR="$HOME/.dotdock"
+FILE_STORE="$APP_DIR/files"
+FILE_INDEX="$FILE_STORE/file_index"
+REPO_URL=""
+REPO_BRANCH="master"
+
+envfile="$APP_DIR/.env"
+version="0.0.1"
+
+
+#
+# Display program heading information
+#
+function showHeading () {
+	echo ""
+	echo ""
+	echo "                    --- Dotdock, version $version ---"
+	echo ""
+	echo "(c)2017 Stephen Parker (http://withaspark.com). All rights reserved."
+	echo ""
+}
+
+#
+# Display the current version of the program
+#
+function showVersion () {
+	echo "$version"
+}
+
+#
+# Show usage and options of the program
+#
+function showHelp () {
+	echo ""
+	echo "USAGE:"
+	echo "	dotdock add FILE"
+	echo "	dotdock diff [FILE]"
+	echo "	dotdock init"
+	echo "	dotdock list"
+	echo "	dotdock publish"
+	echo "	dotdock pull [FILE]"
+	echo "	dotdock rm FILE"
+	echo "	dotdock save [FILE]"
+	echo "	dotdock status"
+	echo ""
+	echo "DESCRIPTION:"
+	echo "	Manages and shares tracked configuration files."
+	echo ""
+	echo "COMMANDS:"
+	echo "  a|add FILE"
+	echo "		Adds a file to the managed configuration files."
+	echo ""
+	echo "  d|diff [FILE]"
+	echo "		Shows the differences between a managed configuration file and the current state of the file."
+	echo ""
+	echo "  i|init"
+	echo "		Inits the managed configuration file repository."
+	echo ""
+	echo "  l|list"
+	echo "		Lists the managed configuration files."
+	echo ""
+	echo "  publish"
+	echo "		Publishes all local managed configuration files to the repository."
+	echo ""
+	echo "  pull [FILE]"
+	echo "		Updates all local managed configuration files with the versions being tracked."
+	echo ""
+	echo "  rm|remove|del|delete FILE"
+	echo "		Removes a file from the managed configuration files."
+	echo ""
+	echo "  save [FILE]"
+	echo "		Shows the change status of the managed configuration file repository."
+	echo ""
+	echo "  s|status"
+	echo "		Shows the change status of the managed configuration file repository."
+	echo ""
+	echo "OPTIONS:"
+	echo "  -v|--version"
+	echo "		Gets the current version of Dotdock."
+	echo ""
+	echo "  -h|--help"
+	echo "		Shows this help."
+	echo ""
+	return 0
+}
+
+#
+# Creates a unique id for a given file with full path
+#
+function flattenFilename () {
+	echo $(echo -n "$1" | sha1sum | awk '{print $1}')
+}
+
+#
+# Inits (or clones the existing) config file repository
+#
+function init () {
+	echo "Initing the managed configuration file repository and file index ..."
+
+	if [[ "x$REPO_URL" == "x" ]]; then
+		echo "Error: Repository URL not provided."
+		echo ""
+		echo "Please specify 'REPO_URL' in the Dotdock env file."
+		echo ""
+		echo "Example:"
+		echo "  REPO_URL=\"https://<username>@<domain>/<user>/<repo>.git\""
+	fi
+
+	if [[ ! -d "$FILE_STORE" ]]; then
+		git clone "$REPO_URL" "$FILE_STORE" 2>&1 1>/dev/null
+		# (cd "$FILE_STORE"; git branch "$REPO_BRANCH"; git checkout "$REPO_BRANCH")
+	fi
+
+	if [[ ! -f "$FILE_INDEX" ]]; then
+		touch "$FILE_INDEX" 2>&1 1>/dev/null
+		# (cd "$FILE_STORE"; git add "$FILE_INDEX" 2>&1 1>/dev/null; git commit --allow-empty -m "Create new Dotdock repo" 2>&1 1>/dev/null; git push -u origin "$REPO_BRANCH" 2>&1 1>/dev/null)
+		(cd "$FILE_STORE"; git add "$FILE_INDEX" 2>&1 1>/dev/null; git commit --allow-empty -m "Create new Dotdock repo" 2>&1 1>/dev/null; git push -u origin master 2>&1 1>/dev/null)
+	fi
+
+	sleep 1
+
+	echo "Initing the managed configuration file repository and file index ... [ Successful ]"
+}
+
+#
+# Checks that all required packages are installed and available for use
+#
+function checkDependencies () {
+	dependencies=("git" "diff" "less")
+
+	for i in "${dependencies[@]}"; do
+		which $i 2>&1 1>/dev/null
+
+		if [[ $? -ne 0 ]]; then
+			errorNeedsDependency "$i"
+			exit 1;
+		fi
+	done
+}
+
+#
+# Checks that the repository for storing files is available
+#
+function checkInit () {
+	if [[ ! -f "$FILE_INDEX" ]]; then
+		errorNeedsInit
+		exit 1;
+	elif [[ ! -d "$FILE_STORE" ]]; then
+		errorNeedsInit
+		exit 1;
+	fi
+}
+
+#
+# Lists all files being managed
+#
+function listFiles () {
+	echo "..."
+
+	less "$FILE_INDEX"
+}
+
+#
+# Fetches the latest version of files from the downstream repo
+#
+function pullFiles () {
+	pullfile=$1
+	pullfiles=()
+
+	(cd "$FILE_STORE"; git pull origin master 2>&1 1>/dev/null)
+
+	if [[ "x$pullfile" == "x" ]]; then
+		while read pullfile; do
+			pullfiles+=(${pullfile/\~/$HOME})
+		done < "$FILE_INDEX"
+	else
+		if [[ -f "$(readlink -f "`pwd`/$pullfile")" ]]; then
+			pullfiles+=($(readlink -f "`pwd`/$pullfile"))
+		elif [[ "$(readlink -f "$pullfile")" ]]; then
+			pullfiles+=(${pullfile/\~/$HOME})
+		fi
+	fi
+
+	for i in "${pullfiles[@]}"; do
+		versionedfile=$(flattenFilename "$i")
+
+		if [[ ! -f "$FILE_STORE/$versionedfile" ]]; then
+			echo "Error: Unable to find file '$FILE_STORE/$versionedfile'"
+			echo ""
+			exit 1;
+		elif [[ ! -f "$i" ]]; then
+			echo "Error: Unable to find file '$i'"
+			echo ""
+			exit 1;
+		fi
+
+		diffresult=$(diff -u "$FILE_STORE/$versionedfile" "$i")
+
+		if [[ ${#diffresult} -gt 1 ]]; then
+			echo "Updating to latest version in repo of '$i'"
+			diff -u "$i" "$FILE_STORE/$versionedfile" | sed 's/^-/\x1b[41m-/;s/^+/\x1b[42m+/;s/^@/\x1b[34m@/;s/$/\x1b[0m/' | less -r
+
+			read -r -p "Would you like to install the changes to $i? [y/N] " response
+			case "$response" in
+			    [yY][eE][sS]|[yY])
+					echo "Updating $i ..."
+					mv "$i" "$i.bak"
+			        cp "$FILE_STORE/$versionedfile" "$i"
+			        ;;
+			    *)
+			        echo "Skipped update of $i"
+			        ;;
+			esac
+		else
+			echo "No updates detected for '$i'"
+			sleep 1
+		fi
+	done
+}
+
+#
+# Pushes commits to the remote repo.
+#
+function publishFiles () {
+	echo ""
+
+	echo "Publishing local changes ..."
+	# (cd "$FILE_STORE"; git push origin "$REPO_BRANCH" 2>&1 1>/dev/null)
+	(cd "$FILE_STORE"; git push origin master 2>&1 1>/dev/null)
+	echo "Publishing local changes ... [ Successful ]"
+}
+
+#
+# Adds or commits an edited file or version of the file to the local repo.
+#
+function addFile () {
+	addfile="$1"
+	action="Adding"
+
+	echo ""
+	if [[ -f "./$addfile" ]]; then
+		addfile=$(readlink -f "`pwd`/$addfile")
+	elif [[ ! -f "${addfile/\~/$HOME}" ]]; then
+		echo "Error: File '$addfile' could not be found."
+		exit 1;
+	fi
+
+	versionedfile=$(flattenFilename "$addfile")
+
+	if [[ -f "$FILE_STORE/$versionedfile" ]]; then
+		action="Editing"
+	fi
+
+	echo -en "\r$action file $addfile ..."
+
+	cp "$addfile" "$FILE_STORE/$versionedfile"
+	addfile=${addfile/#$HOME/\~}
+
+	cp "$FILE_INDEX" "$FILE_INDEX".bak
+	echo "$addfile" >>"$FILE_INDEX".bak
+	uniq "$FILE_INDEX".bak >$FILE_INDEX
+	rm "$FILE_INDEX".bak
+	(cd "$FILE_STORE"; git add "$versionedfile" "$FILE_INDEX" 2>&1 1>/dev/null; git commit -m "$action $addfile" 2>&1 1>/dev/null)
+
+	sleep 1
+
+	echo -e "\r$action file $addfile ... [ Successful ]"
+}
+
+#
+# Shows local modifications for a tracked file. If no file provided, all tracked
+# files.
+#
+function diffFile () {
+	difffile=$1
+	difffiles=()
+
+	if [[ "x$difffile" == "x" ]]; then
+		while read difffile; do
+			difffiles+=(${difffile/\~/$HOME})
+		done < "$FILE_INDEX"
+	else
+		if [[ -f "$(readlink -f "`pwd`/$difffile")" ]]; then
+			difffiles+=($(readlink -f "`pwd`/$difffile"))
+		elif [[ "$(readlink -f "$difffile")" ]]; then
+			difffiles+=(${difffile/\~/$HOME})
+		fi
+	fi
+
+	for i in "${difffiles[@]}"; do
+		versionedfile=$(flattenFilename "$i")
+
+		if [[ ! -f "$FILE_STORE/$versionedfile" ]]; then
+			echo "Error: Unable to find file '$FILE_STORE/$versionedfile'"
+			echo ""
+			exit 1;
+		elif [[ ! -f "$i" ]]; then
+			echo "Error: Unable to find file '$i'"
+			echo ""
+			exit 1;
+		fi
+
+		diffresult=$(diff -u "$FILE_STORE/$versionedfile" "$i")
+
+		if [[ ${#diffresult} -gt 1 ]]; then
+			echo "Showing differences for '$i'"
+			diff -u "$FILE_STORE/$versionedfile" "$i" | sed 's/^-/\x1b[41m-/;s/^+/\x1b[42m+/;s/^@/\x1b[34m@/;s/$/\x1b[0m/' | less -r
+		else
+			echo "No differences detected for '$i'"
+			sleep 1
+		fi
+	done
+}
+
+#
+# Save local modifications to a file to the local repo.
+#
+function saveFiles () {
+	pullfile=$1
+	pullfiles=()
+
+	(cd "$FILE_STORE"; git pull origin master 2>&1 1>/dev/null)
+
+	if [[ "x$pullfile" == "x" ]]; then
+		while read pullfile; do
+			pullfiles+=(${pullfile/\~/$HOME})
+		done < "$FILE_INDEX"
+	else
+		if [[ -f "$(readlink -f "`pwd`/$pullfile")" ]]; then
+			pullfiles+=($(readlink -f "`pwd`/$pullfile"))
+		elif [[ "$(readlink -f "$pullfile")" ]]; then
+			pullfiles+=(${pullfile/\~/$HOME})
+		fi
+	fi
+
+	for i in "${pullfiles[@]}"; do
+		versionedfile=$(flattenFilename "$i")
+
+		if [[ ! -f "$FILE_STORE/$versionedfile" ]]; then
+			echo "Error: Unable to find file '$FILE_STORE/$versionedfile'"
+			echo ""
+			exit 1;
+		elif [[ ! -f "$i" ]]; then
+			echo "Error: Unable to find file '$i'"
+			echo ""
+			exit 1;
+		fi
+
+		diffresult=$(diff -u "$FILE_STORE/$versionedfile" "$i")
+
+		if [[ ${#diffresult} -gt 1 ]]; then
+			echo "Updating repo with current local copy of '$i'"
+			diff -u "$FILE_STORE/$versionedfile" "$i" | sed 's/^-/\x1b[41m-/;s/^+/\x1b[42m+/;s/^@/\x1b[34m@/;s/$/\x1b[0m/' | less -r
+
+			read -r -p "Would you like to save the changes to $i? [y/N] " response
+			case "$response" in
+			    [yY][eE][sS]|[yY])
+					echo "Saving $i ..."
+					addFile $i
+			        ;;
+			    *)
+			        echo "Skipped save of $i"
+			        ;;
+			esac
+		else
+			echo "No differences detected for '$i'"
+			sleep 1
+		fi
+	done
+}
+
+#
+# Removes a tracked file from being tracked.
+#
+function rmFile () {
+	rmfile=$1
+	found=false
+
+	if [[ -f "$(readlink -f "`pwd`/$rmfile")" ]]; then
+		rmfile=$(readlink -f "`pwd`/$rmfile")
+	elif [[ "$(readlink -f "$rmfile")" ]]; then
+		rmfile=${rmfile/\~/$HOME}
+	fi
+
+	echo -en "\rRemoving file $rmfile ..."
+
+	while read f; do
+		if [[ "$f" == "${rmfile/#$HOME/\~}" ]]; then
+			found=true
+			break
+		fi
+	done < "$FILE_INDEX"
+
+	versionedfile=$(flattenFilename "$rmfile")
+
+	if [[ $found == false || ! -f "$FILE_STORE/$versionedfile" ]]; then
+		echo ""
+		echo "Error: The file '${rmfile/#$HOME/\~}' is not being tracked."
+		echo ""
+		exit 1;
+	fi
+
+	cp "$FILE_INDEX" "$FILE_INDEX".bak
+	entry=$(echo $rmfile | sed 's/\//\\\//g')
+	sed -i "/^$entry$/d" "$FILE_INDEX".bak
+	mv "$FILE_INDEX".bak $FILE_INDEX
+	(cd "$FILE_STORE"; git rm "$versionedfile" 2>&1 1>/dev/null; git add "$FILE_INDEX"; git commit -m "Remove ${rmfile/#$HOME/\~}" 2>&1 1>/dev/null)
+
+	sleep 1
+
+	echo -e "\rRemoving file ${rmfile/#$HOME/\~} ... [ Successful ]"
+}
+
+#
+# Displays the status of the file repository.
+#
+function statusFiles () {
+	(cd "$FILE_STORE"; git status)
+}
+
+#
+# Read settings from env file
+#
+function loadEnv () {
+	if [[ -f "$envfile" ]]; then
+		set -o allexport
+		source "$envfile"
+		set +o allexport
+	fi
+}
+
+#
+# Display error for unmet dependency.
+#
+function errorNeedsDependency () {
+	echo "Error: Dotdock requires a package or dependency that can not be found."
+	echo ""
+	echo "Please install or setup '$1'."
+	echo ""
+}
+
+#
+# Display error for system not having been initialized yet.
+#
+function errorNeedsInit () {
+	echo "Error: This install is not yet initialized."
+	echo ""
+	echo "Run \"dotdock init\" and then try again."
+	echo ""
+}
+
+#
+# Process command line arguments.
+#
+function getArgs () {
+	while [[ $# -gt 0 ]]; do
+		args="$1"
+
+		case $args in
+			i|init)
+				checkDependencies
+				showHeading
+				init
+				echo ""
+				return
+				;;
+			l|list)
+				checkInit
+				checkDependencies
+				showHeading
+				listFiles
+				echo ""
+				return
+				;;
+			pull)
+				checkInit
+				checkDependencies
+				showHeading
+				pullFiles "$2"
+				echo ""
+				shift
+				return
+				;;
+			publish)
+				checkInit
+				checkDependencies
+				showHeading
+				publishFiles
+				echo ""
+				return
+				;;
+			save)
+				checkInit
+				checkDependencies
+				showHeading
+				saveFiles "$2"
+				echo ""
+				shift
+				return
+				;;
+			s|status)
+				checkInit
+				checkDependencies
+				showHeading
+				statusFiles
+				echo ""
+				return
+				;;
+			a|add)
+				checkInit
+				checkDependencies
+				showHeading
+				addFile "$2"
+				echo ""
+				shift
+				return
+				;;
+			d|diff)
+				checkInit
+				checkDependencies
+				showHeading
+				diffFile "$2"
+				echo ""
+				shift
+				return
+				;;
+			rm|remove|del|delete)
+				checkInit
+				checkDependencies
+				showHeading
+				rmFile $2
+				echo ""
+				shift
+				return
+				;;
+			-v|--version)
+				showVersion
+				return
+				;;
+			-h|--help)
+				showHeading
+				showHelp
+				return
+				;;
+			*)
+				echo "Error: Unknown argument '$args'."
+				exit 1;
+				;;
+		esac
+		shift
+	done
+}
+
+#
+# Main execution.
+#
+function main () {
+	loadEnv
+
+	getArgs $@""
+}
+
+
+
+main $@""
+exit 0;
