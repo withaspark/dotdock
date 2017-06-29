@@ -55,7 +55,7 @@ Updates all local managed configuration files with the versions being tracked.
 Removes a file from the managed configuration files.
 
 `save [FILE]`<br>
-Shows the change status of the managed configuration file repository.
+Saves the current state of a managed configuration file to the file repository.
 
 `s|status`<br>
 Shows the change status of the managed configuration file repository.
@@ -65,4 +65,4 @@ Shows the change status of the managed configuration file repository.
 Gets the current version of Dotdock.
 
 `-h|--help`<br>
-Shows this help.
+Shows help and usage.

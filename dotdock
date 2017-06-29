@@ -98,7 +98,7 @@ function showHelp () {
 	echo "		Removes a file from the managed configuration files."
 	echo ""
 	echo "  save [FILE]"
-	echo "		Shows the change status of the managed configuration file repository."
+	echo "		Saves the current state of a managed configuration file to the file repository."
 	echo ""
 	echo "  s|status"
 	echo "		Shows the change status of the managed configuration file repository."
@@ -108,7 +108,7 @@ function showHelp () {
 	echo "		Gets the current version of Dotdock."
 	echo ""
 	echo "  -h|--help"
-	echo "		Shows this help."
+	echo "		Shows help and usage."
 	echo ""
 	return 0
 }
