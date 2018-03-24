@@ -8,7 +8,7 @@ The easy way to manage system configuration and dotfiles. Version controlled dot
 1. Install Dotdock to a bin directory (`~/bin`, `/usr/local/bin`, etc.).
    ```sh
    git clone --depth=1 https://github.com/withaspark/dotdock.git $HOME/.dotdock
-   sudo cp $HOME/.dotdock/dotdock /usr/local/bin/dotdock; sudo chmod ugo+x /usr/local/bin/dotdock
+   sudo cp $HOME/.dotdock/dotdock /usr/local/bin/dotdock; sudo chmod ugo+rx /usr/local/bin/dotdock
    ```
 2. Create a remote repository to backup or publish configuration files to.
 3. Configure Dotdock.
